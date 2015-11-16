@@ -1,10 +1,7 @@
-all:	 sender receiver
-
-sender: sender.c
-	gcc -Wall $< -o $@
+all:	 receiver
 	
-receiver: sender.c
+receiver: receiver.c
 	gcc -Wall $< -o $@
 
 clean:
-	rm -f receiver sender *.o *~ core
+	rm -f receiver *.o *~ core

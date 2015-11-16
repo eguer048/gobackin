@@ -3,32 +3,37 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/time.h>
-#define BUFFSIZE 256
-#define PACKSIZE 1040
+#define PACSIZE 1040
+#define MAXPAY 1024
 #define ACKSIZE 16
+#define HSIZE 15
 
 void syserr(char *msg) { perror(msg); exit(-1); }
 uint16_t CheckSum(char * packet, int psize);
+struct Data {
+   uint32_t seqNum;
+   uint8_t ackNum;
+   uint32_t numPackets;
+   uint16_t chkSum;
+   char payload[MAXPAY];
+}
 
 int main(int argc, char *argv[])
 {
-  int sockfd, tempfd, portno, packetsEmpty;
-  uint16_t chkSum;
-  uint32_t seqNum, numPackets, expectedSeqNum;
+  int sockfd, tempfd, portno, n, numPacketsEmpty;
+  uint32_t seqNum, expectedSeqNum, numPackets;
+  uint16_t checksum;
   uint8_t ack;
-  struct timeval tv;
-  fd_set readfs;
   struct sockaddr_in serv_addr, clt_addr;
+  struct timeval tv;
+  fd_set readfds;
   socklen_t addrlen;
-  char * recvIP;
-  char buffer[BUFFSIZE];
-  char packet[PACKSIZE];
-  char ackPackage[ACKSIZE];
+  struct Data packet, ackPac;
 
   if(argc != 3) { 
     fprintf(stderr,"Usage: %s <port> <name of file>\n", argv[0]);
@@ -36,144 +41,113 @@ int main(int argc, char *argv[])
   } 
   else
   { 
-	server = gethostbyname(argv[1]);
-	if(!server) 
-	{
-		fprintf(stderr, "ERROR: no such host: %s\n", argv[1]);
-		return 2;
-	}
   	portno = atoi(argv[1]);
   }
 
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if(sockfd < 0) syserr("Can't create socket."); 
+  if(sockfd < 0) syserr("Can't open the socket."); 
   	printf("Creating socket...\n");
 
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_addr.s_addr = INADDR_ANY;
   serv_addr.sin_port = htons(portno);
+  addrlen = sizeof(clt_addr); 
 
   if(bind(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) 
     syserr("Can't bind.");
   printf("Binding socket to port %d...\n", portno);
   
-  tv.tv_sec = 1;
+  //Set up to receive
+  tv.tv_sec = 60;
   tv.tv_usec = 0;
-  FD_ZERO(readfs);
-  FD_SET(sockfd, &readfs);
-  tempfd = open(argv[2], O_CREAT | O_WRONY, 0666);
-  if (tempfd < 0) syserr("Failed to open file.");
-  memset(packet, 0, PACKSIZE);
-  memset(ackPackage, 0, ACKSIZE);
+  tempfd = open(argv[2], O_CREAT | O_WRONLY, 0666);
+  if(tempfd < 0) syserr("Failed to open the file.");
   expectedSeqNum = 0;
-  packetsEmpty = 1;
+  numPacketsEmpty = 1;
+  
+  //Receive packet
+  while(1){
+   printf("Waiting on port %d...\n", portno);
+   FD_ZERO(&readfds);
+   FD_SET(sockfd, &readfds);
+  	select(sockfd+1, &readfds, NULL, NULL, &tv);
+  	
+  	//If packet is received
+  	if(FD_ISSET(sockfd, &readfds)){
+	  n = recvfrom(sockfd, packet, PACSIZE, 0, 
+	  	(struct sockaddr*)&clt_addr, &addrlen); 
+	  if(n < 0) syserr("Can't receive from sender.");
 
-   while(1)
-   {
-  		select(sockfd+1, &readfds, NULL, NULL, &tv);
-  		//If packet is received
-  		if(FD_ISSET(sockfd, &readfds))
-  		{
-	  		n = recvfrom(sockfd, packet, PACSIZE, 0, 
-	  		(struct sockaddr*)&clt_addr, &addrlen);
-	  		if(n < 0) syserr("can't receive from sender"); 
+     seqNum = packet.seqNum;
+	  checksum = CheckSum(packet, PACSIZE);
+	  ack = packet.ackNum;
+	  numPackets = packet.numPackets;
 	  
-	  		seqNum = (uint32_t) packet[5] | (uint32_t) packet[4] << 8 | 
-	  		   			(uint32_t) packet[3] << 16 | (uint32_t) packet[2] << 24;
-	  		checksum = ChkSum(packet, PACSIZE);
-	  		if(numPacketsEmpty)
-	  		{
-	  			numPacketsEmpty = 0;
-	  			numPackets = (uint32_t) packet[10] | (uint32_t) packet[9] << 8 | 
-	  								(uint32_t) packet[8] << 16 | (uint32_t) packet[7] << 24;
-	  		}
-	  
-	  		//Check if packet is correct
-	  		if(checksum == 0 && seqNum == exSeqNum)
-	  		{
-	  			ack = 1;
-	  			//set ack
-	  			ackPac[0] = ack & 255;
-	  			ackPac[1] = ' ';
-	  			//set seq#
-	  			ackPac[2] = (seqNum >>  24) & 255;
-	  			ackPac[3] = (seqNum >>  16) & 255;
-			  	ackPac[4] = (seqNum >>  8) & 255;
-			  	ackPac[5] = seqNum & 255;
-			  	ackPac[6] = ' ';
-			  	//set numPackets
-			  	ackPac[7] = (numPackets >>  24) & 255;
-			  	ackPac[8] = (numPackets >>  16) & 255;
-			  	ackPac[9] = (numPackets >>  8) & 255;
-			  	ackPac[10] = numPackets & 255;
-			  	ackPac[11] = ' ';
-			  	//set checksum
-			  	ackPac[12] = (checksum >>  8) & 255;
-			  	ackPac[13] = checksum & 255;
-			  	ackPac[14] = ' ';
-			  	ackPac[15] = ' ';
-			  	
-			  	//calculate and set checksum
-			  	checksum = ChkSum(packet, PACSIZE);
-			  	ackPac[12] = (checksum >>  8) & 255;
-			  	ackPac[13] = checksum & 255;
+	  //Check if packet is correct
+	  if(checksum == 0 && seqNum == expectedSeqNum){
 	  	
-			  	n = sendto(sockfd, ackPac, ACKSIZE, 0, 
-			  		(struct sockaddr*)&clt_addr, addrlen);
-		  		if(n < 0) syserr("can't send to receiver");
+	  	ackPac.ackNum = ack;
+	  	//set seq#
+	  	ackPac.seqNum = seqNum;
+	  	//set numPackets
+	  	ackPac.numPackets;
+	  	//calculate and set checksum
+	  	ackPac.checkSum = checkSum;
+	  	strcpy(ackPac.payload, packet.payload);
 	  	
-	  			exSeqNum++;
+	  	n = sendto(sockfd, ackPac, ACKSIZE, 0, 
+	  		(struct sockaddr*)&clt_addr, addrlen);
+  		if(n < 0) syserr("Can't send to receiver.");
 	  	
-			  	//Write 1 KB packet to file
-			  	if(seqNum != numPackets){
-			  		n = write(tempfd, &packet[HSIZE + 1], MAXPAY);
-			  		if(n < 0) syserr("can't write to file");
+	  	expectedSeqNum++;
+	  	
+	  	//Write 1 KB packet to file
+	  	if(seqNum != numPackets){
+	  		n = write(tempfd, &packet[HSIZE + 1], MAXPAY);
+	  		if(n < 0) syserr("Can't write to file.");
+	  	}
+	  	else{
+	  		// Find where string terminates and write to file
+	  		int i;
+	  		char eof;
+	  		int eofLoc = MAXPAY;
+	  		for(i=0; i <= MAXPAY; i++){
+	  			eof = packet[HSIZE + 1 + i];
+	  			if(eof == '\0'){
+	  				eofLoc  = i;
+	  				break;
+	  			} 
 	  		}
-	  		else	// Find where string terminates and write to file
-	  		{
-		  		int i;
-		  		char eof;
-		  		int eofLoc = MAXPAY;
-		  		for(i=0; i <= MAXPAY; i++)
-		  		{
-		  			eof = packet[HSIZE + 1 + i];
-		  			if(eof == '\0')
-		  			{
-		  				eofLoc  = i;
-		  				break;
-	  				} 
-	  			}
-	  			n = write(tempfd, &packet[HSIZE + 1], eofLoc);
-	  			if(n < 0) syserr("Can't write at end of file");
-	  		}
+	  		n = write(tempfd, &packet[HSIZE + 1], eofLoc);
+	  		if(n < 0) syserr("Can't write at the end of file.");
+	  	}
+	  	
 	  }
-	  else if(exSeqNum > 0)
-	  { 	
-	  		//packet fault, but past first packet
-	  	 	n = sendto(sockfd, ackPac, ACKSIZE, 0, 
-	  		 		(struct sockaddr*)&clt_addr, addrlen);
-  		 	if(n < 0) syserr("can't send to receiver");
-	  }	  
+	  else if(expectedSeqNum > 0){ 	//packet fault, but past first packet
+	  	 n = sendto(sockfd, ackPac, ACKSIZE, 0, 
+	  		 (struct sockaddr*)&clt_addr, addrlen);
+  		 if(n < 0) syserr("Can't send to receiver.");
+	  }
+	  
 	}
-	else
-	{
+	else{
 		if(seqNum != numPackets)
 			printf("File not received, timeout after 60 secs.\n");
 		else
 			printf("File receieved, timeout after 60 secs.\n");
 	}
   }
-  close(sockfd);
+  
+  close(sockfd); 
   close(tempfd);
   return 0;
 }
 
-uint16_t CheckSum(char * packet, int psize)
-{
+uint16_t CheckSum(Data * packet, int psize){
 	uint16_t checksum = 0, curr = 0, i = 0;
 	while(psize > 0){
-		curr = ((packet[i] << 8) + packet[i+1]) + checksum;
+		curr = packet.checksum;
 		checksum = curr + 0x0FFFF;
 		curr = (curr >> 16); //Grab the carryout if it exists
 		checksum = curr + checksum;
