@@ -25,7 +25,7 @@ struct Data {
 
 int main(int argc, char *argv[])
 {
-  int sockfd, tempfd, portno, n, numPacketsEmpty;
+  int sockfd, tempfd, portno, n;
   uint32_t seqNum, expectedSeqNum, numPackets;
   uint16_t checksum;
   uint8_t ack;
@@ -64,7 +64,6 @@ int main(int argc, char *argv[])
   tempfd = open(argv[2], O_CREAT | O_WRONLY, 0666);
   if(tempfd < 0) syserr("Failed to open the file.");
   expectedSeqNum = 0;
-  numPacketsEmpty = 1;
   
   //Receive packet
   while(1){
@@ -104,7 +103,7 @@ int main(int argc, char *argv[])
 	  	
 	  	//Write 1 KB packet to file
 	  	if(seqNum != numPackets){
-	  		n = write(tempfd, &packet[HSIZE + 1], MAXPAY);
+	  		n = write(tempfd, &packet.payload, MAXPAY);
 	  		if(n < 0) syserr("Can't write to file.");
 	  	}
 	  	else{
