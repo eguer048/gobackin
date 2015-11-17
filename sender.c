@@ -185,6 +185,6 @@ int main(int argc, char *argv[])
 uint16_t CheckSum(struct Data * packet){
 	uint16_t checksum = 0;
 	if (packet->checkSum == 0)
-		checksum = 1111;
+		checksum = 255;
 	return ~checksum;
 }
