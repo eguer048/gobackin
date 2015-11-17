@@ -13,15 +13,15 @@
 #define ACKSIZE 16
 #define HSIZE 15
 
-void syserr(char *msg) { perror(msg); exit(-1); }
-uint16_t CheckSum(char * packet, int psize);
 struct Data {
    uint32_t seqNum;
    uint8_t ackNum;
    uint32_t numPackets;
-   uint16_t chkSum;
+   uint16_t checkSum;
    char payload[MAXPAY];
-}
+};
+void syserr(char *msg) { perror(msg); exit(-1); }
+uint16_t CheckSum(struct Data * packet, int psize);
 
 int main(int argc, char *argv[])
 {
@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
   	
   	//If packet is received
   	if(FD_ISSET(sockfd, &readfds)){
-	  n = recvfrom(sockfd, packet, PACSIZE, 0, 
+	  n = recvfrom(sockfd, packet, sizeof(struct Data), 0, 
 	  	(struct sockaddr*)&clt_addr, &addrlen); 
 	  if(n < 0) syserr("Can't receive from sender.");
 
@@ -84,53 +84,60 @@ int main(int argc, char *argv[])
 	  numPackets = packet.numPackets;
 	  
 	  //Check if packet is correct
-	  if(checksum == 0 && seqNum == expectedSeqNum){
+	  if(checksum == 0 && seqNum == expectedSeqNum)
+	  {
 	  	
-	  	ackPac.ackNum = ack;
+	  	ackPac->ackNum = ack;
 	  	//set seq#
-	  	ackPac.seqNum = seqNum;
+	  	ackPac->seqNum = seqNum;
 	  	//set numPackets
-	  	ackPac.numPackets;
+	  	ackPac->numPackets = numPackets;
 	  	//calculate and set checksum
-	  	ackPac.checkSum = checkSum;
-	  	strcpy(ackPac.payload, packet.payload);
+	  	ackPac->checkSum = checkSum;
+	  	strcpy(ackPac->payload, packet->payload);
 	  	
-	  	n = sendto(sockfd, ackPac, ACKSIZE, 0, 
+	  	n = sendto(sockfd, ackPac, sizeof(struct Data), 0, 
 	  		(struct sockaddr*)&clt_addr, addrlen);
   		if(n < 0) syserr("Can't send to receiver.");
 	  	
 	  	expectedSeqNum++;
 	  	
 	  	//Write 1 KB packet to file
-	  	if(seqNum != numPackets){
-	  		n = write(tempfd, &packet.payload, MAXPAY);
+	  	if(seqNum != numPackets)
+	  	{
+	  		n = write(tempfd, &packet->payload, MAXPAY);
 	  		if(n < 0) syserr("Can't write to file.");
 	  	}
-	  	else{
+	  	else
+	  	{
 	  		// Find where string terminates and write to file
 	  		int i;
 	  		char eof;
 	  		int eofLoc = MAXPAY;
-	  		for(i=0; i <= MAXPAY; i++){
-	  			eof = packet[HSIZE + 1 + i];
-	  			if(eof == '\0'){
+	  		for(i=0; i <= MAXPAY; i++)
+	  		{
+	  			eof = packet[i];
+	  			if(eof == '\0')
+	  			{
 	  				eofLoc  = i;
 	  				break;
 	  			} 
 	  		}
-	  		n = write(tempfd, &packet[HSIZE + 1], eofLoc);
+	  		n = write(tempfd, &packet->payload, eofLoc);
 	  		if(n < 0) syserr("Can't write at the end of file.");
 	  	}
 	  	
 	  }
-	  else if(expectedSeqNum > 0){ 	//packet fault, but past first packet
-	  	 n = sendto(sockfd, ackPac, ACKSIZE, 0, 
+	  else if(expectedSeqNum > 0)	//packet fault, but past first packet
+	  { 	
+	  	 n = sendto(sockfd, ackPac, sizeof(struct Data), 0, 
 	  		 (struct sockaddr*)&clt_addr, addrlen);
   		 if(n < 0) syserr("Can't send to receiver.");
 	  }
 	  
 	}
-	else{
+	else
+	{
 		if(seqNum != numPackets)
 			printf("File not received, timeout after 60 secs.\n");
 		else
@@ -143,7 +150,7 @@ int main(int argc, char *argv[])
   return 0;
 }
 
-uint16_t CheckSum(Data * packet, int psize){
+uint16_t CheckSum(struct Data * packet, int psize){
 	uint16_t checksum = 0, curr = 0, i = 0;
 	while(psize > 0){
 		curr = packet.checksum;
