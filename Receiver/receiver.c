@@ -71,79 +71,89 @@ int main(int argc, char *argv[])
    printf("Waiting on port %d...\n", portno);
    FD_ZERO(&readfds);
    FD_SET(sockfd, &readfds);
-  	select(sockfd+1, &readfds, NULL, NULL, &tv);
+  	int ret = select(sockfd+1, &readfds, NULL, NULL, &tv);
   	
   	//If packet is received
-  	if(FD_ISSET(sockfd, &readfds)){
-	  n = recvfrom(sockfd, packet, sizeof(struct Data), 0, 
-	  	(struct sockaddr*)&clt_addr, &addrlen); 
-	  if(n < 0) syserr("Can't receive from sender.");
+  	printf("The value of ret is %d\n", ret);
+  	if (ret > 0)
+  	{
+	  	if(FD_ISSET(sockfd, &readfds)){
+		  n = recvfrom(sockfd, packet, sizeof(struct Data), 0, 
+		  	(struct sockaddr*)&clt_addr, &addrlen); 
+		  if(n < 0) syserr("Can't receive from sender.");
+		  if(n > 0) printf("Received package with seqNum %u.", packet->seqNum);
 
-     seqNum = packet->seqNum;
-	  checksum = CheckSum(packet);
-	  ack = packet->ackNum;
-	  numPackets = packet->numPackets;
-	  
-	  //Check if packet is correct
-	  if(checksum == 0 && seqNum == expectedSeqNum)
-	  {
-	  	
-	  	ackPac->ackNum = ack;
-	  	//set seq#
-	  	ackPac->seqNum = seqNum;
-	  	//set numPackets
-	  	ackPac->numPackets = numPackets;
-	  	//calculate and set checksum
-	  	ackPac->checkSum = checksum;
-	  	strcpy(ackPac->payload, packet->payload);
-	  	
-	  	n = sendto(sockfd, ackPac, sizeof(struct Data), 0, 
-	  		(struct sockaddr*)&clt_addr, addrlen);
-  		if(n < 0) syserr("Can't send to receiver.");
-	  	
-	  	expectedSeqNum++;
-	  	
-	  	//Write 1 KB packet to file
-	  	if(seqNum != numPackets)
-	  	{
-	  		n = write(tempfd, &packet->payload, MAXPAY);
-	  		if(n < 0) syserr("Can't write to file.");
-	  	}
-	  	else
-	  	{
-	  		// Find where string terminates and write to file
-	  		int i;
-	  		char eof;
-	  		int eofLoc = MAXPAY;
-	  		for(i=0; i <= MAXPAY; i++)
-	  		{
-	  			eof = packet->payload[i];
-	  			if(eof == '\0')
-	  			{
-	  				eofLoc  = i;
-	  				break;
-	  			} 
-	  		}
-	  		n = write(tempfd, &packet->payload, eofLoc);
-	  		if(n < 0) syserr("Can't write at the end of file.");
-	  	}
-	  	
-	  }
-	  else if(expectedSeqNum > 0)	//packet fault, but past first packet
-	  { 	
-	  	 n = sendto(sockfd, ackPac, sizeof(struct Data), 0, 
-	  		 (struct sockaddr*)&clt_addr, addrlen);
-  		 if(n < 0) syserr("Can't send to receiver.");
-	  }
-	  
+		  seqNum = packet->seqNum;
+		  checksum = CheckSum(packet);
+		  ack = packet->ackNum;
+		  numPackets = packet->numPackets;
+		  
+		  //Check if packet is correct
+		  if(checksum == 0 && seqNum == expectedSeqNum)
+		  {
+		  	
+		  	ackPac->ackNum = ack;
+		  	//set seq#
+		  	ackPac->seqNum = seqNum;
+		  	//set numPackets
+		  	ackPac->numPackets = numPackets;
+		  	//calculate and set checksum
+		  	ackPac->checkSum = checksum;
+		  	strcpy(ackPac->payload, packet->payload);
+		  	
+		  	n = sendto(sockfd, ackPac, sizeof(struct Data), 0, 
+		  		(struct sockaddr*)&clt_addr, addrlen);
+	  		if(n < 0) syserr("Can't send to receiver.");
+	  		if(n > 0) printf("Sent back packet with ack %u.\n", ackPac->seqNum);
+		  	
+		  	expectedSeqNum++;
+		  	
+		  	//Write 1 KB packet to file
+		  	if(seqNum != numPackets)
+		  	{
+		  		n = write(tempfd, &packet->payload, MAXPAY);
+		  		if(n < 0) syserr("Can't write to file.");
+		  	}
+		  	else
+		  	{
+		  		// Find where string terminates and write to file
+		  		int i;
+		  		char eof;
+		  		int eofLoc = MAXPAY;
+		  		for(i=0; i <= MAXPAY; i++)
+		  		{
+		  			eof = packet->payload[i];
+		  			if(eof == '\0')
+		  			{
+		  				eofLoc  = i;
+		  				break;
+		  			} 
+		  		}
+		  		n = write(tempfd, &packet->payload, eofLoc);
+		  		if(n < 0) syserr("Can't write at the end of file.");
+		  	}
+		  	
+		  }
+		  else if(expectedSeqNum > 0)	//packet fault, but past first packet
+		  { 	
+		  	 n = sendto(sockfd, ackPac, sizeof(struct Data), 0, 
+		  		 (struct sockaddr*)&clt_addr, addrlen);
+	  		 if(n < 0) syserr("Can't send to receiver.");
+		  }
+		  
+		}
+		else
+		{
+			if(seqNum != numPackets)
+				printf("File not received, timeout after 60 secs.\n");
+			else
+				printf("File receieved, timeout after 60 secs.\n");
+			break;
+		}
 	}
 	else
 	{
-		if(seqNum != numPackets)
-			printf("File not received, timeout after 60 secs.\n");
-		else
-			printf("File receieved, timeout after 60 secs.\n");
-		break;
+		printf("Error with ret.\n");
 	}
   }
   

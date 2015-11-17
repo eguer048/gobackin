@@ -113,29 +113,65 @@ int main(int argc, char *argv[])
    printf("Any second now!\n");
    FD_ZERO(&readfds);
    FD_SET(sockfd, &readfds);
-  	select(sockfd+1, &readfds, NULL, NULL, 0);
-  	if(FD_ISSET (sockfd, &readfds)){ 	//recv acks
-  	   printf("Here comes a package!");
-  		n = recvfrom(sockfd, ackPac, sizeof(struct Data), 0, 
-  		  (struct sockaddr*)&serv_addr, &addrlen); 
-  		if(n < 0) syserr("Can't receive ack package.");
-  		
-  		//check if corrupt
-  		checksum = CheckSum(ackPac);
-  		if(checksum == 0){				//Not Corrupt
-  			base = ackPac->numPackets;
-  			if(base == numPackets) break; //Finished sending packets
-  			base++; 					//Set base to next seqnum 
-  			if (base != seqNum){
-  				gettimeofday(&t1, NULL);
-  			}
-  		}
-  		else{							//ack packet was corrupt
+  	int ret = select(sockfd+1, &readfds, NULL, NULL, 0);
+  	printf("The value of ret is %d\n", ret);
+  	if (ret > 0)
+  	{
+	  	if(FD_ISSET (sockfd, &readfds))	//recv acks
+	  	{ 	
+	  	   printf("Here comes a package!");
+	  		n = recvfrom(sockfd, ackPac, sizeof(struct Data), 0, 
+	  		  (struct sockaddr*)&serv_addr, &addrlen); 
+	  		if(n < 0) syserr("Can't receive ack package.");
+	  		if(n > 0) printf("Received ack package with ack %u.", ackPac->seqNum); 
+	  		
+	  		//check if corrupt
+	  		checksum = CheckSum(ackPac);
+	  		if(checksum == 0){				//Not Corrupt
+	  			base = ackPac->numPackets;
+	  			if(base == numPackets) break; //Finished sending packets
+	  			base++; 					//Set base to next seqnum 
+	  			if (base != seqNum){
+	  				gettimeofday(&t1, NULL);
+	  			}
+	  		}
+	  		else{							//ack packet was corrupt
+		  		gettimeofday(&t2, NULL);
+		  		double elaps = (t2.tv_sec - t1.tv_sec) * 1000.0;
+		  		elaps += (t2.tv_usec - t2.tv_usec) /1000.0;
+		  		while(elaps < TIMEOUT){}	// Loop until timeout occurs
+		  		if( elaps > TIMEOUT){		// clock timedout, resend packets
+		  			gettimeofday(&t1, NULL);
+		  			int i;
+		  			for(i = base; i < seqNum; i++){
+		  				n = sendto(sockfd, fileArray[i], sizeof(struct Data), 0, 
+		  			  		(struct sockaddr*)&serv_addr, addrlen);
+		  				if(n < 0) syserr("Can't send to receiver.");
+		  			}
+		  		}
+	  		}
+	  	}
+	  	else    	//send packets
+	  	{								 	   
+	  		if(seqNum < base + WINSIZE){	//window not maxed out
+	  		   
+	  			n = sendto(sockfd, fileArray[seqNum], sizeof(struct Data), 0, 
+	  			  (struct sockaddr*)&serv_addr, addrlen);
+	  			if(n < 0) syserr("Can't send to receiver.");
+	  			if(n > 0)
+	  			{
+	  			   printf("Attempting to send package %d.\n", seqNum);
+	  			}
+	  			if(base == seqNum){
+	  				gettimeofday(&t1, NULL);
+	  			}
+	  			seqNum++;
+	  		}
 	  		gettimeofday(&t2, NULL);
 	  		double elaps = (t2.tv_sec - t1.tv_sec) * 1000.0;
 	  		elaps += (t2.tv_usec - t2.tv_usec) /1000.0;
-	  		while(elaps < TIMEOUT){}	// Loop until timeout occurs
-	  		if( elaps > TIMEOUT){		// clock timedout, resend packets
+	  		printf("Attempting to send package %d.\n", seqNum);
+	  		if( elaps > TIMEOUT){			// clock timedout, resend packets
 	  			gettimeofday(&t1, NULL);
 	  			int i;
 	  			for(i = base; i < seqNum; i++){
@@ -144,38 +180,11 @@ int main(int argc, char *argv[])
 	  				if(n < 0) syserr("Can't send to receiver.");
 	  			}
 	  		}
-  		}
+	  	}
   	}
-  	else    	//send packets
-  	{								
-  	   
-  		if(seqNum < base + WINSIZE){	//window not maxed out
-  		   
-  			n = sendto(sockfd, fileArray[seqNum], sizeof(struct Data), 0, 
-  			  (struct sockaddr*)&serv_addr, addrlen);
-  			if(n < 0) syserr("Can't send to receiver.");
-  			if(n > 0)
-  			{
-  			   printf("Attempting to send package %d.\n", seqNum);
-  			}
-  			if(base == seqNum){
-  				gettimeofday(&t1, NULL);
-  			}
-  			seqNum++;
-  		}
-  		gettimeofday(&t2, NULL);
-  		double elaps = (t2.tv_sec - t1.tv_sec) * 1000.0;
-  		elaps += (t2.tv_usec - t2.tv_usec) /1000.0;
-  		printf("Attempting to send package %d.\n", seqNum);
-  		if( elaps > TIMEOUT){			// clock timedout, resend packets
-  			gettimeofday(&t1, NULL);
-  			int i;
-  			for(i = base; i < seqNum; i++){
-  				n = sendto(sockfd, fileArray[i], sizeof(struct Data), 0, 
-  			  		(struct sockaddr*)&serv_addr, addrlen);
-  				if(n < 0) syserr("Can't send to receiver.");
-  			}
-  		}
+  	else
+  	{
+  		printf("Error with ret.\n");
   	} 	
   }
   close(sockfd);
